@@ -64,26 +64,52 @@ function highlightPhrases(text, phrases) {
   const tokens = tokenize(text);
   let highlights = new Array(tokens.length).fill(null);
   
-  phrases.forEach(phraseInfo => {
+  // Sort phrases by length (longest first) to handle overlapping phrases correctly
+  const sortedPhrases = [...phrases].sort((a, b) => 
+    b.phrase.length - a.phrase.length
+  );
+  
+  sortedPhrases.forEach(phraseInfo => {
     const phraseWords = tokenize(phraseInfo.phrase);
     const textLower = text.toLowerCase();
     const phraseLower = phraseInfo.phrase.toLowerCase();
-    const startPos = textLower.indexOf(phraseLower);
     
-    if (startPos >= 0) {
-      // Find which tokens are part of this phrase
-      let currentPos = 0;
-      for (let i = 0; i < tokens.length; i++) {
-        const tokenPos = text.indexOf(tokens[i], currentPos);
-        if (tokenPos >= startPos && tokenPos < startPos + phraseLower.length) {
-          highlights[i] = { 
-            type: phraseInfo.type === 'idiom' ? 'phrase' : 'chain',
-            score: phraseInfo.score,
-            phraseId: phraseInfo.phrase // Add phrase ID to connect highlights
-          };
-          currentPos = tokenPos + tokens[i].length;
+    // Find all occurrences of the phrase
+    let startPos = 0;
+    let phrasePos;
+    
+    while ((phrasePos = textLower.indexOf(phraseLower, startPos)) !== -1) {
+      // Ensure we're at word boundaries
+      const beforeChar = phrasePos > 0 ? textLower[phrasePos - 1] : ' ';
+      const afterChar = phrasePos + phraseLower.length < textLower.length ? 
+                       textLower[phrasePos + phraseLower.length] : ' ';
+                       
+      const isAtWordBoundary = !/\w/.test(beforeChar) && !/\w/.test(afterChar);
+      
+      if (isAtWordBoundary) {
+        // Find which tokens are part of this phrase
+        let currentPos = 0;
+        for (let i = 0; i < tokens.length; i++) {
+          const tokenPos = text.indexOf(tokens[i], currentPos);
+          
+          // Check if token is within phrase boundaries
+          if (tokenPos >= phrasePos && tokenPos < phrasePos + phraseLower.length) {
+            highlights[i] = { 
+              type: phraseInfo.type === 'idiom' ? 'phrase' : 'chain',
+              score: phraseInfo.score,
+              phraseId: phraseInfo.phrase // Add phrase ID to connect highlights
+            };
+            currentPos = tokenPos + tokens[i].length;
+          } else if (tokenPos > phrasePos + phraseLower.length) {
+            // Optimization: stop checking once we're past the phrase
+            break;
+          } else {
+            currentPos = tokenPos + tokens[i].length;
+          }
         }
       }
+      
+      startPos = phrasePos + 1;
     }
   });
   
@@ -96,15 +122,75 @@ function detectSarcasm(text) {
   const punctuationPattern = /(!|\?{2,})/g;
   const excessivePunctuation = (text.match(punctuationPattern) || []).length;
   
-  return sarcasmPatterns.some(pattern => pattern.test(text)) || 
-         (positiveWords >= 2 && negativeIndicators >= 1) ||
-         (positiveWords >= 3 && excessivePunctuation >= 2);
+  // Check for emoji contradictions
+  const positiveEmojis = (text.match(/😊|😄|👍|❤️|😁|🙂|😍/g) || []).length;
+  const negativeContext = (text.match(/\b(terrible|awful|horrible|bad|worst)\b/gi) || []).length;
+  
+  // Check for dramatic capitalization patterns
+  const dramaticCapitalization = /\b[a-z]+[A-Z][a-z]*\b/.test(text) || 
+                                /\b[A-Z]{3,}\b/.test(text);
+  
+  // Check for quotes that might indicate sarcasm
+  const quotedPositives = (text.match(/"(good|great|excellent|wonderful|perfect|amazing)"/gi) || []).length;
+  
+  const existingScore = 
+    (sarcasmPatterns.some(pattern => pattern.test(text)) ? 0.5 : 0) +
+    (positiveWords >= 2 && negativeIndicators >= 1 ? 0.3 : 0) +
+    (positiveWords >= 3 && excessivePunctuation >= 2 ? 0.3 : 0) +
+    (positiveEmojis > 0 && negativeContext > 0 ? 0.4 : 0) +
+    (dramaticCapitalization ? 0.3 : 0) +
+    (quotedPositives > 0 ? 0.3 : 0);
+  
+  const features = {
+    // Contrast between positive/negative words
+    sentimentContrast: calculateSentimentContrast(text),
+    
+    // Presence of hyperbole markers
+    hyperbole: (text.match(/\b(absolutely|completely|totally|literally|definitely)\b/gi) || []).length,
+    
+    // Mixed case patterns (e.g., "sUuUuRe")
+    mixedCase: (text.match(/\b[a-z]+[A-Z][a-z]+[A-Z][a-z]+\b/g) || []).length,
+    
+    // Ellipsis usage
+    ellipsis: (text.match(/\.{3,}/g) || []).length,
+    
+    // Quoted text - often indicates sarcastic tone
+    quotedText: (text.match(/["'].*?["']/g) || []).length
+  };
+  
+  // Weight features and combine scores
+  const combinedScore = existingScore * 0.6 + 
+                        features.sentimentContrast * 0.15 +
+                        Math.min(features.hyperbole * 0.05, 0.1) +
+                        Math.min(features.mixedCase * 0.1, 0.1) +
+                        Math.min(features.ellipsis * 0.05, 0.1) +
+                        Math.min(features.quotedText * 0.05, 0.1);
+  
+  return {
+    detected: combinedScore > 0.6,
+    confidence: Math.min(combinedScore, 1.0),
+    features: features // Return features for explanation
+  };
 }
 
-function analyze(text) {
-  // Reference CONTEXT_WINDOW from config
-  const CONTEXT_WINDOW = 3; // Words after modifier that are affected
+function calculateSentimentContrast(text) {
+  const tokens = tokenize(text);
+  let positiveTokens = 0;
+  let negativeTokens = 0;
   
+  tokens.forEach(token => {
+    const stemmed = stem(token);
+    if (sentimentLexicon[stemmed] > 0) positiveTokens++;
+    if (sentimentLexicon[stemmed] < 0) negativeTokens++;
+  });
+  
+  // Higher contrast = higher potential for sarcasm
+  return (positiveTokens > 0 && negativeTokens > 0) ? 
+    Math.min(positiveTokens, negativeTokens) / Math.max(positiveTokens, negativeTokens) : 0;
+}
+
+// Improved analyze function with better modifiers handling
+function analyze(text) {
   if (!text.trim()) return {
     score: 0,
     sentiment: "Neutral 😐",
@@ -117,13 +203,20 @@ function analyze(text) {
   let highlights = new Array(tokens.length).fill(null);
   let sentiment = 0;
   let modifierStack = [];
-  let negationContext = 0;
-  let currentIntensity = 1;
   const detectedPhrases = detectPhrases(text);
   const sarcasmDetected = detectSarcasm(text);
   let explanations = [];
   let positiveCount = 0;
   let negativeCount = 0;
+  
+  // Cache stemmed tokens to avoid redundant processing
+  const stemCache = new Map();
+  const getStemmedToken = (token) => {
+    if (!stemCache.has(token)) {
+      stemCache.set(token, stem(token));
+    }
+    return stemCache.get(token);
+  };
 
   // Process detected phrases first
   if (detectedPhrases.length > 0) {
@@ -133,15 +226,17 @@ function analyze(text) {
       explanations.push(`Found ${phrase.type === 'idiom' ? 'idiomatic phrase' : 'chained expression'} <strong>"${phrase.phrase}"</strong> with score: ${phrase.score > 0 ? '+' : ''}${phrase.score.toFixed(2)}`);
       
       if (phrase.score > 0) positiveCount++;
-      else negativeCount++;
+      else if (phrase.score < 0) negativeCount++;
     });
-    highlights = phraseHighlights.map((h, i) => h || highlights[i]);
+    
+    // More efficiently merge highlights
+    highlights = highlights.map((h, i) => phraseHighlights[i] || h);
   }
 
   // Process individual tokens with improved chaining
   for (let i = 0; i < tokens.length; i++) {
     const rawToken = tokens[i];
-    const token = stem(rawToken);
+    const token = getStemmedToken(rawToken);
     
     // Skip if this token is part of a phrase we already processed
     if (highlights[i] && (highlights[i].type === 'phrase' || highlights[i].type === 'chain')) {
@@ -158,7 +253,6 @@ function analyze(text) {
 
     // Handle negations with extended context
     if (negations.has(token)) {
-      negationContext = CONTEXT_WINDOW + 1;
       highlights[i] = { type: 'negation' };
       explanations.push(`Found negation word: <strong>"${rawToken}"</strong> - will invert sentiment of following ${CONTEXT_WINDOW} words`);
       modifierStack.push({
@@ -183,19 +277,22 @@ function analyze(text) {
       continue;
     }
 
-    // Process sentiment words with modifier chaining - only exact word matches
     if (sentimentLexicon[token] !== undefined) {
       let wordSentiment = sentimentLexicon[token];
       let explanation = `<strong>"${rawToken}"</strong> base score: ${wordSentiment > 0 ? '+' : ''}${wordSentiment.toFixed(2)}`;
       
-      // Apply modifier stack only if within context window
+      let modifierEffect = 1;
+      let modifierExplanation = '';
+      
       if (modifierStack.length > 0) {
         modifierStack.forEach(mod => {
-          const prevScore = wordSentiment;
-          wordSentiment *= mod.value;
-          explanation += ` → modified by <strong>${mod.word}</strong> (x${mod.value.toFixed(2)}) to ${wordSentiment > 0 ? '+' : ''}${wordSentiment.toFixed(2)}`;
+          modifierEffect *= mod.value;
+          modifierExplanation += ` → modified by <strong>${mod.word}</strong> (x${mod.value.toFixed(2)})`;
           mod.duration--;
         });
+        
+        wordSentiment *= modifierEffect;
+        explanation += modifierExplanation + ` to ${wordSentiment > 0 ? '+' : ''}${wordSentiment.toFixed(2)}`;
 
         // Clean expired modifiers (duration reached 0)
         modifierStack = modifierStack.filter(m => m.duration > 0);
@@ -211,14 +308,14 @@ function analyze(text) {
       sentiment += wordSentiment;
       
       if (wordSentiment > 0) positiveCount++;
-      else negativeCount++;
+      else if (wordSentiment < 0) negativeCount++;
       
       explanations.push(explanation + ` → added to total score`);
+    } else {
+      // Reduce context for non-sentiment words
+      modifierStack.forEach(m => m.duration--);
+      modifierStack = modifierStack.filter(m => m.duration > 0);
     }
-    
-    // Reduce context for non-sentiment words
-    modifierStack.forEach(m => m.duration--);
-    modifierStack = modifierStack.filter(m => m.duration > 0);
   }
 
   // Detect sarcasm based on multiple factors
@@ -238,7 +335,7 @@ function analyze(text) {
   return {
     score: sentiment,
     sentiment: getSentimentLabel(sentiment),
-    sarcasm: sarcasmDetected,
+    sarcasm: sarcasmDetected.detected,
     sarcasmConfidence: sarcasmConfidence,
     highlights: highlights,
     explanations: explanations,
@@ -247,100 +344,123 @@ function analyze(text) {
   };
 }
 
-// ... rest of the code remains the same ...
-
 function highlightText(originalText, highlights) {
   const tokens = tokenize(originalText);
   
-  // Group tokens that belong to the same phrase
-  const phraseGroups = {};
+  // Group tokens that belong to the same phrase using a more efficient Map
+  const phraseGroups = new Map();
   highlights.forEach((highlight, index) => {
     if (highlight && highlight.phraseId) {
-      if (!phraseGroups[highlight.phraseId]) {
-        phraseGroups[highlight.phraseId] = {
+      if (!phraseGroups.has(highlight.phraseId)) {
+        phraseGroups.set(highlight.phraseId, {
           indices: [index],
           type: highlight.type,
           score: highlight.score
-        };
+        });
       } else {
-        phraseGroups[highlight.phraseId].indices.push(index);
+        phraseGroups.get(highlight.phraseId).indices.push(index);
       }
     }
   });
   
-  // Create a copy of the tokens array for output
-  const parts = originalText.split(/(\b[\w']+\b|[^\w\s]+|\s+)/).filter(p => p);
-  let output = [];
-  let tokenIndex = 0;
-  let inPhrase = false;
-  let currentPhraseId = null;
-  let currentPhraseType = null;
-  let skipIndices = new Set();
+  // Pre-compute token positions for efficiency
+  const tokenPositions = [];
+  let pos = 0;
+  for (const token of tokens) {
+    const tokenPos = originalText.indexOf(token, pos);
+    tokenPositions.push(tokenPos);
+    pos = tokenPos + token.length;
+  }
   
-  // Process parts to generate highlighted output
-  for (let i = 0; i < parts.length; i++) {
-    const part = parts[i];
+  // Build output using document fragment approach (conceptually)
+  let output = [];
+  let processedIndices = new Set();
+  
+  // First handle phrases for better cohesion
+  for (const [phraseId, group] of phraseGroups.entries()) {
+    // Sort indices to ensure we process them in order
+    const sortedIndices = [...group.indices].sort((a, b) => a - b);
+    const firstIndex = sortedIndices[0];
+    const lastIndex = sortedIndices[sortedIndices.length - 1];
     
-    // Check if it's a word token
-    if (/\b[\w']+\b/.test(part)) {
-      // Skip if this token was already processed as part of a phrase
-      if (skipIndices.has(tokenIndex)) {
-        tokenIndex++;
-        output.push(part); // Still add the part to output
-        continue;
+    // Ensure sequential indices (phrase components should be adjacent)
+    let isSequential = true;
+    for (let i = 1; i < sortedIndices.length; i++) {
+      if (sortedIndices[i] !== sortedIndices[i-1] + 1) {
+        isSequential = false;
+        break;
       }
+    }
+    
+    if (isSequential) {
+      // Extract phrase text directly
+      const startPos = tokenPositions[firstIndex];
+      const endPos = tokenPositions[lastIndex] + tokens[lastIndex].length;
+      const phraseText = originalText.substring(startPos, endPos);
       
-      const highlight = highlights[tokenIndex];
+      const highlight = highlights[firstIndex];
+      const highlightClass = highlight.type === 'chain' ? 
+        (highlight.score > 0 ? 'positive' : 'negative') : 
+        highlight.type;
       
-      // Check if this token is part of a phrase
-      if (highlight && highlight.phraseId) {
-        // Start a new phrase span
-        const phraseGroup = phraseGroups[highlight.phraseId];
-        const highlightClass = highlight.type === 'chain' ? 
-          (highlight.score > 0 ? 'positive' : 'negative') : 
-          highlight.type;
-        
-        // Mark all tokens in this phrase as processed
-        phraseGroup.indices.forEach(idx => skipIndices.add(idx));
-        
-        // Find all tokens in this phrase
-        const phraseTokens = phraseGroup.indices.map(idx => tokens[idx]);
-        const phraseRegex = new RegExp(`\\b${phraseTokens.join('\\b\\s*\\b')}\\b`, 'i');
-        
-        // Find the phrase in the original text
-        const match = originalText.match(phraseRegex);
-        if (match) {
-          output.push(`<span class="highlight ${highlightClass}" title="${getHighlightTooltip(highlight.type)}">${match[0]}</span>`);
-          
-          // Skip tokens that are part of this phrase
-          tokenIndex += phraseGroup.indices.length;
-          
-          // Skip parts that are part of this phrase
-          let skipCount = phraseGroup.indices.length * 2 - 1; // Number of words + spaces
-          i += skipCount - 1; // Adjust for the loop increment
-          continue;
-        }
-      }
+      // Mark as processed
+      sortedIndices.forEach(idx => processedIndices.add(idx));
       
-      // Handle individual token highlighting
-      if (highlight) {
-        const highlightClass = highlight.type === 'chain' ? 
-          (highlights[tokenIndex].score > 0 ? 'positive' : 'negative') : 
-          highlight.type;
-        
-        output.push(`<span class="highlight ${highlightClass}" title="${getHighlightTooltip(highlight.type)}">${part}</span>`);
-      } else {
-        output.push(part);
-      }
-      
-      tokenIndex++;
-    } else {
-      // Non-word parts (spaces, punctuation) are preserved as is
-      output.push(part);
+      // Add span for the entire phrase
+      output.push({
+        pos: startPos,
+        text: `<span class="highlight ${highlightClass}" title="${getHighlightTooltip(highlight.type)}">${phraseText}</span>`
+      });
     }
   }
   
-  return output.join('');
+  // Handle individual tokens
+  for (let i = 0; i < tokens.length; i++) {
+    if (processedIndices.has(i)) continue;
+    
+    const token = tokens[i];
+    const tokenPos = tokenPositions[i];
+    
+    if (highlights[i]) {
+      const highlight = highlights[i];
+      const highlightClass = highlight.type === 'chain' ? 
+        (highlight.score > 0 ? 'positive' : 'negative') : 
+        highlight.type;
+      
+      output.push({
+        pos: tokenPos,
+        text: `<span class="highlight ${highlightClass}" title="${getHighlightTooltip(highlight.type)}">${token}</span>`
+      });
+    } else {
+      output.push({
+        pos: tokenPos,
+        text: token
+      });
+    }
+  }
+  
+  // Add remaining text
+  let lastPos = 0;
+  let finalOutput = [];
+  
+  // Sort output pieces by position
+  output.sort((a, b) => a.pos - b.pos);
+  
+  for (const piece of output) {
+    // Add text between last piece and current piece
+    if (piece.pos > lastPos) {
+      finalOutput.push(originalText.substring(lastPos, piece.pos));
+    }
+    finalOutput.push(piece.text);
+    lastPos = piece.pos + piece.text.replace(/<[^>]*>/g, '').length;
+  }
+  
+  // Add any remaining text
+  if (lastPos < originalText.length) {
+    finalOutput.push(originalText.substring(lastPos));
+  }
+  
+  return finalOutput.join('');
 }
 
 function getHighlightTooltip(type) {
@@ -357,39 +477,172 @@ function getHighlightTooltip(type) {
 }
 
 function getSentimentLabel(score) {
-  const absScore = Math.abs(score);
-  if (score >= 4.5) return "Extremely Positive 💖🌟";
-  if (score >= 3.5) return "Very Positive 😊✨";
-  if (score >= 2.5) return "Strongly Positive 😊👍";
-  if (score >= 1.5) return "Positive 🙂";
-  if (score >= 0.8) return "Mildly Positive 🙂";
-  if (score >= 0.3) return "Slightly Positive 🙂";
-  if (score <= -4.5) return "Extremely Negative 💢🔥";
-  if (score <= -3.5) return "Very Negative 😠👎";
-  if (score <= -2.5) return "Strongly Negative 😠";
-  if (score <= -1.5) return "Negative 🙁";
-  if (score <= -0.8) return "Mildly Negative 😐";
-  if (score < -0.3) return "Slightly Negative 😐";
+  if (score >= 10) return "Extremely Positive 💖🌟";
+  if (score >= 7) return "Very Positive 😊✨";
+  if (score >= 4) return "Strongly Positive 😊👍";
+  if (score >= 2) return "Positive 🙂";
+  if (score >= 1) return "Mildly Positive 🙂";
+  if (score >= 0.5) return "Slightly Positive 🙂";
+  if (score <= -10) return "Extremely Negative 💢🔥";
+  if (score <= -7) return "Very Negative 😠👎";
+  if (score <= -4) return "Strongly Negative 😠";
+  if (score <= -2) return "Negative 🙁";
+  if (score <= -1) return "Mildly Negative 😐";
+  if (score < -0.5) return "Slightly Negative 😐";
   return "Neutral 😐";
 }
 
 function getSentimentColor(score) {
-  if (score >= 3.5) return "var(--positive)";
-  if (score >= 1.5) return "var(--positive)";
-  if (score >= 0.3) return "var(--positive)";
-  if (score <= -3.5) return "var(--negative)";
-  if (score <= -1.5) return "var(--negative)";
-  if (score < -0.3) return "var(--negative)";
+  if (score >= 8) return "var(--positive-strong)";
+  if (score >= 1) return "var(--positive)";
+  if (score <= -8) return "var(--negative-strong)";
+  if (score < -1) return "var(--negative)";
   return "var(--neutral)";
 }
 
+function highlightText(originalText, highlights) {
+  const tokens = tokenize(originalText);
+  
+  // Group tokens that belong to the same phrase using a more efficient Map
+  const phraseGroups = new Map();
+  highlights.forEach((highlight, index) => {
+    if (highlight && highlight.phraseId) {
+      if (!phraseGroups.has(highlight.phraseId)) {
+        phraseGroups.set(highlight.phraseId, {
+          indices: [index],
+          type: highlight.type,
+          score: highlight.score
+        });
+      } else {
+        phraseGroups.get(highlight.phraseId).indices.push(index);
+      }
+    }
+  });
+  
+  // Pre-compute token positions for efficiency
+  const tokenPositions = [];
+  let pos = 0;
+  for (const token of tokens) {
+    const tokenPos = originalText.indexOf(token, pos);
+    tokenPositions.push(tokenPos);
+    pos = tokenPos + token.length;
+  }
+  
+  // Build output using document fragment approach (conceptually)
+  let output = [];
+  let processedIndices = new Set();
+  
+  // First handle phrases for better cohesion
+  for (const [phraseId, group] of phraseGroups.entries()) {
+    // Sort indices to ensure we process them in order
+    const sortedIndices = [...group.indices].sort((a, b) => a - b);
+    const firstIndex = sortedIndices[0];
+    const lastIndex = sortedIndices[sortedIndices.length - 1];
+    
+    // Ensure sequential indices (phrase components should be adjacent)
+    let isSequential = true;
+    for (let i = 1; i < sortedIndices.length; i++) {
+      if (sortedIndices[i] !== sortedIndices[i-1] + 1) {
+        isSequential = false;
+        break;
+      }
+    }
+    
+    if (isSequential) {
+      // Extract phrase text directly
+      const startPos = tokenPositions[firstIndex];
+      const endPos = tokenPositions[lastIndex] + tokens[lastIndex].length;
+      const phraseText = originalText.substring(startPos, endPos);
+      
+      const highlight = highlights[firstIndex];
+      const highlightClass = highlight.type === 'chain' ? 
+        (highlight.score > 0 ? 'positive' : 'negative') : 
+        highlight.type;
+      
+      // Mark as processed
+      sortedIndices.forEach(idx => processedIndices.add(idx));
+      
+      // Add span for the entire phrase
+      output.push({
+        pos: startPos,
+        text: `<span class="highlight ${highlightClass}" title="${getHighlightTooltip(highlight.type)}">${phraseText}</span>`
+      });
+    }
+  }
+  
+  // Handle individual tokens
+  for (let i = 0; i < tokens.length; i++) {
+    if (processedIndices.has(i)) continue;
+    
+    const token = tokens[i];
+    const tokenPos = tokenPositions[i];
+    
+    if (highlights[i]) {
+      const highlight = highlights[i];
+      const highlightClass = highlight.type === 'chain' ? 
+        (highlight.score > 0 ? 'positive' : 'negative') : 
+        highlight.type;
+      
+      output.push({
+        pos: tokenPos,
+        text: `<span class="highlight ${highlightClass}" title="${getHighlightTooltip(highlight.type)}">${token}</span>`
+      });
+    } else {
+      output.push({
+        pos: tokenPos,
+        text: token
+      });
+    }
+  }
+  
+  // Add remaining text
+  let lastPos = 0;
+  let finalOutput = [];
+  
+  // Sort output pieces by position
+  output.sort((a, b) => a.pos - b.pos);
+  
+  for (const piece of output) {
+    // Add text between last piece and current piece
+    if (piece.pos > lastPos) {
+      finalOutput.push(originalText.substring(lastPos, piece.pos));
+    }
+    finalOutput.push(piece.text);
+    lastPos = piece.pos + piece.text.replace(/<[^>]*>/g, '').length;
+  }
+  
+  // Add any remaining text
+  if (lastPos < originalText.length) {
+    finalOutput.push(originalText.substring(lastPos));
+  }
+  
+  return finalOutput.join('');
+}
+
+// Optimized runAnalysis function with performance improvements
 function runAnalysis() {
   const inputText = document.getElementById('textInput').value;
-  const result = analyze(inputText);
-  const highlighted = highlightText(inputText, result.highlights);
+  
+  // Add debouncing or throttling for better performance on rapid input
+  clearTimeout(window.analysisTimer);
+  window.analysisTimer = setTimeout(() => {
+    // Show loading state
+    document.getElementById('output').innerHTML = '<div class="loading">Analyzing...</div>';
+    
+    // Use requestAnimationFrame to avoid blocking the UI
+    requestAnimationFrame(() => {
+      const result = analyze(inputText);
+      const highlighted = highlightText(inputText, result.highlights);
+      
+      // Update UI with results
+      updateUI(result, highlighted);
+    });
+  }, 300); // 300ms debounce time
+}
 
+function updateUI(result, highlighted) {
   // Ensure the marker stays within the bar (clamp to 0-100%)
-  const markerPosition = Math.min(Math.max(((result.score + 5) / 10) * 100, 0), 100);
+  const markerPosition = Math.min(Math.max(((result.score + 10) / 20) * 100, 0), 100);
   
   let explanationHTML = '';
   if (result.explanations.length > 0) {
@@ -431,9 +684,9 @@ function runAnalysis() {
       <div class="score-marker" style="left: ${markerPosition}%"></div>
     </div>
     <div class="score-labels">
-      <span>-5 (Negative)</span>
+      <span>-10 (Negative)</span>
       <span>0 (Neutral)</span>
-      <span>+5 (Positive)</span>
+      <span>+10 (Positive)</span>
     </div>
     
     <div class="details">

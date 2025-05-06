@@ -2,9 +2,11 @@
   --primary: #4f46e5;
   --primary-dark: #4338ca;
   --positive: #10b981;
-  --positive-light: #d1fae5;
+  --positive-strong: #059669;
+  --positive-light: #b6ffd9;
   --negative: #ef4444;
-  --negative-light: #fee2e2;
+  --negative-strong: #dc2626;
+  --negative-light: #ffbcbc;
   --neutral: #64748b;
   --neutral-light: #f1f5f9;
   --intensifier: #6366f1;

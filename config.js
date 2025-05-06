@@ -2,32 +2,39 @@ const sentimentLexicon = {
   // Positive words - now with wider range (0.1-3.5)
   good: 1.0, great: 1.5, excellent: 2.2, awesome: 1.8, fantastic: 2.0,
   nice: 0.8, happy: 1.2, joy: 1.5, love: 2.0, liked: 1.0, amazing: 2.2,
-  wonderful: 2.0, proud: 1.2, satisfied: 1.1, helpful: 1.0, perfect: 3.0,
+  wonderful: 2.0, proud: 1.2, helpful: 1.0, perfect: 3.0,
   superb: 2.3, brilliant: 2.2, stellar: 2.3, favorite: 1.7,
-  exceptional: 2.5, delighted: 1.5, thrilled: 1.8, outstanding: 2.4,
-  marvelous: 2.0, terrific: 1.9, pleasant: 1.2, enjoyable: 1.4,
-  impressive: 1.7, fortunate: 1.3, lucky: 1.2, blessed: 1.7,
-  cheerful: 1.3, content: 1.1, grateful: 1.5, optimistic: 1.2,
+  exceptional: 2.5, outstanding: 2.4, marvelous: 2.0, terrific: 1.9, 
+  pleasant: 1.2, enjoyable: 1.4,impressive: 1.7, fortunate: 1.3, lucky: 1.2, 
+  blessed: 1.7, cheerful: 1.3, content: 1.1, grateful: 1.5, optimistic: 1.2,
   fun: 1.1, cool: 0.7, loved: 2.0, appreciate: 1.2, satisfying: 1.1,
-  incredible: 2.3, exquisite: 3.2, beautiful: 1.8, success: 1.5,
+  incredible: 2.3, exquisite: 3.2, success: 1.5,
   successful: 1.7, achievement: 1.5, accomplished: 1.3, celebrate: 1.3,
   win: 1.3, victory: 1.7, triumph: 2.0, beneficial: 1.2, worthwhile: 1.2,
   valuable: 1.3, special: 1.2, admirable: 1.3, respectable: 1.1,
   commendable: 1.4, praiseworthy: 1.5, effective: 1.0, efficient: 1.0,
   desirable: 1.2, positive: 1.2, supportive: 1.3, encouraging: 1.2,
   reassuring: 1.2, magical: 1.7, inspiring: 1.6, fascinating: 1.4,
-  interesting: 0.9, intriguing: 0.8, exciting: 1.4, enthusiastic: 1.3,
+  interesting: 0.9, intriguing: 0.8, exciting: 1.4,
   worthy: 1.2, dedicated: 1.0, committed: 0.9, attentive: 1.1,
   quality: 1.2, convenient: 1.0, reliable: 1.2, trustworthy: 1.3,
   honest: 1.2, genuine: 1.2, recommended: 1.3, recommend: 1.3,
-  
-  // Beauty related (adjusted)
+
+  // Feeling related
+  bored: -1.0, boring: -1.2, dull: -1.0, tedious: -1.2, tiresome: -1.3,
+  weary: -1.2, fatigued: -1.3, exhausted: -1.5, drained: -1.4,
+  excited: 1.5, thrilled: 1.8, energized: 1.6, invigorated: 1.7,
+  satisfied: 1.4, fulfilled: 1.5, contented: 1.4, relaxed: 1.3,
+  delighted: 1.5, euphoric: 2.0, ecstatic: 2.5, blissful: 2.4,
+  enthusiastic: 1.5, passionate: 1.6, zealous: 1.7, fervent: 1.6,
+
+  // Beauty related
   beautiful: 1.8, gorgeous: 2.0, stunning: 2.2, pretty: 1.4, lovely: 1.7,
   attractive: 1.5, elegant: 1.6, dazzling: 1.9, radiant: 2.0, glowing: 1.7,
   handsome: 1.6, charming: 1.5, cute: 1.3, picturesque: 1.6, scenic: 1.6,
   aesthetic: 1.4, breathtaking: 2.8, magnificent: 2.9, majestic: 2.5, splendid: 2.4,
 
-  // Nature and flowers (adjusted)
+  // Nature and flowers
   flower: 1.1, flowers: 1.1, floral: 1.1, blooming: 1.3, blossoming: 1.4,
   garden: 1.2, botanical: 1.0, organic: 0.9, natural: 1.0, nature: 1.3,
   rose: 1.3, lily: 1.2, tulip: 1.2, daisy: 1.2, orchid: 1.3,
@@ -36,7 +43,7 @@ const sentimentLexicon = {
   sunlit: 1.5, golden: 1.4, spring: 1.3, summer: 1.3, sunny: 1.4,
   refreshing: 1.5, breezy: 1.2, fresh: 1.3, crisp: 1.2, pure: 1.4,
   
-  // Safety related (adjusted)
+  // Safety related
   safe: 1.4, safety: 1.5, secure: 1.4, protected: 1.3, guarded: 1.2,
   sheltered: 1.3, safeguard: 1.3, shield: 1.2, defense: 1.2, 
   stable: 1.1, steady: 1.1, sound: 1.0, solid: 1.1, sturdy: 1.1,
@@ -45,7 +52,7 @@ const sentimentLexicon = {
   wellness: 1.4, wellbeing: 1.5, health: 1.3, healthy: 1.4, wholesome: 1.3,
   harmless: 1.1, innocent: 1.2, benign: 1.1, gentle: 1.2, mild: 1.0,
   
-  // Positive emotions and states (adjusted)
+  // Positive emotions and states
   joyful: 1.7, ecstatic: 2.5, euphoric: 2.8, elated: 2.0, blissful: 2.4,
   gleeful: 1.7, jubilant: 1.9, merry: 1.6, jolly: 1.6, jovial: 1.5,
   serene: 1.6, tranquil: 1.7, peaceful: 1.7, calm: 1.4, relaxed: 1.5,
@@ -56,7 +63,7 @@ const sentimentLexicon = {
   friendly: 1.5, sociable: 1.4, amiable: 1.4, cordial: 1.3, affable: 1.4,
   loving: 1.7, caring: 1.6, affectionate: 1.6,
   
-  // Professional/achievement related (adjusted)
+  // Professional/achievement related
   expert: 1.6, proficient: 1.5, skilled: 1.5, talented: 1.6, adept: 1.5,
   masterful: 1.9, professional: 1.5, competent: 1.4, capable: 1.4, qualified: 1.3,
   accomplished: 1.6, achieved: 1.5, successful: 1.6, prosperous: 1.8, thriving: 1.8,
@@ -65,13 +72,13 @@ const sentimentLexicon = {
   intelligent: 1.5, smart: 1.5, brilliant: 1.9, wise: 1.7, knowledgeable: 1.7,
   insightful: 1.5, perceptive: 1.5, discerning: 1.4, astute: 1.5, shrewd: 1.4,
   
-  // Value related (adjusted)
+  // Value related
   premium: 1.5, luxury: 1.6, exclusive: 1.5, elite: 1.6, superior: 1.6,
   precious: 1.7, priceless: 2.8, invaluable: 2.8, worthy: 1.5, deserving: 1.4,
   beneficial: 1.5, advantageous: 1.5, useful: 1.4, practical: 1.3, functional: 1.3,
   economical: 1.3, affordable: 1.4, bargain: 1.4, deal: 1.4, worthwhile: 1.4,
   
-  // Miscellaneous positive (adjusted)
+  // Miscellaneous positive
   authentic: 1.4, genuine: 1.5, real: 1.3, original: 1.4, legitimate: 1.3,
   ethical: 1.5, moral: 1.4, principled: 1.5, virtuous: 1.7, noble: 1.6,
   perfect: 3.0, flawless: 2.8, immaculate: 2.6, pristine: 2.4,
@@ -281,7 +288,10 @@ const intensifiers = {
   rather: 1.2, reasonably: 1, adequately: 0.9,
   sufficiently: 1.1, perfectly: 1.9, ideally: 1.8,
   amazingly: 2.1, astonishingly: 2, shockingly: 1.9,
-  surprisingly: 1.8, stunningly: 2, impressively: 1.9
+  surprisingly: 1.8, stunningly: 2, impressively: 1.9,
+  dramatically: 1.8, strikingly: 1.7, breathtakingly: 2.2,
+  wonderfully: 1.8, marvelously: 1.9,
+  weirdly: 1.5, oddly: 1.4, strangely: 1.3,
 };
 
 // Expanded idiomatic phrases with improved detection
@@ -532,7 +542,9 @@ const idiomaticPhrases = {
   "hell": -4.5,
   "nightmare": -4.2,
   "dream come true": 4.2,
-  "dream": 3.8
+  "dream": 3.8,
+  "couldn't be better": 4.5,
+  "happier": 3.5,
 };
 
 // Improved sarcasm detection with more patterns
@@ -759,5 +771,5 @@ const negationIntensifierPatterns = [
 ];
 
 // Context processing parameters
-const CONTEXT_WINDOW = 3;
+const CONTEXT_WINDOW = 4;
 const SARCASTIC_THRESHOLD = 0.35;
