@@ -5,13 +5,21 @@ document.getElementById('textInput').addEventListener('input', function() {
 });
 
 function tokenize(text) {
-  // Improved tokenization to match only complete words
-  // This ensures we don't match parts of words
-  return text.match(/\b[\w']+\b/g) || [];
+  // Match sequences of word chars, %, ., / that are:
+  // 1. At start of string followed by whitespace/punctuation
+  // 2. Between whitespace
+  // 3. Before end of string
+  return text.match(/(?:^|\s)([a-zA-Z0-9'%./]+)(?=\s|$|[.,;:!?])/g)?.map(m => m.trim()) || [];
 }
 
 function stem(word) {
-  // Only apply stemming to complete words, not parts of words
+  // Skip stemming if the word contains % (e.g., "50%")
+  if (word.includes('%')) return word.toLowerCase();
+  
+  // Skip stemming if it's a number, fraction, or decimal
+  if (word.match(/^[\d./]+$/)) return word;
+  
+  // Default stemming for regular words
   return word.toLowerCase().replace(/\b(ing|ly|ed|ious|ies|s|'s|')$/g, "");
 }
 
@@ -189,6 +197,110 @@ function calculateSentimentContrast(text) {
     Math.min(positiveTokens, negativeTokens) / Math.max(positiveTokens, negativeTokens) : 0;
 }
 
+const numberModifierWords = new Set([
+  "half", "quarter", "third", "twice", "once", "thrice",
+  "double", "triple", "single", "one", "two", "three",
+  "four", "five", "six", "seven", "eight", "nine", "ten",
+]);
+
+function detectNumberModifiers(text, currentIndex, tokens) {
+  console.log(text, currentIndex, tokens);
+  const contextWindow = CONTEXT_WINDOW;
+
+  const verbalFractions = {
+    "half": 0.5,
+    "a half": 0.5,
+    "quarter": 0.25,
+    "a quarter": 0.25,
+    "one third": 1 / 3,
+    "two thirds": 2 / 3,
+    "three quarters": 3 / 4,
+    "twice": 2,
+    "once": 1,
+    "thrice": 3
+  };
+
+  function matchNumberPattern(token) {
+    token = token.trim();
+    let match;
+  
+    // Handle percentage patterns (50% or 50 percent)
+    if ((match = token.match(/^(\d+)%$/))) {
+      return { value: parseInt(match[1]) / 100, token };
+    } 
+    else if ((match = token.match(/^(\d+)\s*percent$/i))) {
+      return { value: parseInt(match[1]) / 100, token };
+    } 
+    // Handle fractions (1/2 or 3/4)
+    else if ((match = token.match(/^(\d+)\/(\d+)$/))) {
+      return { value: parseInt(match[1]) / parseInt(match[2]), token };
+    }
+    // Handle decimals (0.5 or 1.25)
+    else if ((match = token.match(/^\d+\.\d+$/))) {
+      return { value: parseFloat(token), token };
+    }
+    // Handle multipliers (2x or 3 times)
+    else if ((match = token.match(/^(\d+)x$/i))) {
+      return { value: parseInt(match[1]), token };
+    }
+    else if ((match = token.match(/^(\d+)\s*times$/i))) {
+      return { value: parseInt(match[1]), token };
+    }
+    // Handle plain integers
+    else if ((match = token.match(/^\d+$/))) {
+      return { value: parseInt(token), token };
+    }
+  
+    return null;
+  }
+
+  function matchVerbalModifier(start, end, direction) {
+    const phrase = tokens.slice(start, end).join(" ").toLowerCase();
+    if (verbalFractions[phrase]) {
+      return {
+        value: verbalFractions[phrase],
+        token: phrase,
+        position: start,
+        direction
+      };
+    }
+    return null;
+  }
+
+  // Check previous tokens
+  const prevStart = Math.max(0, currentIndex - contextWindow);
+  for (let i = currentIndex - 1; i >= prevStart; i--) {
+    const token = tokens[i];
+    if (numberModifierWords.has(token.toLowerCase())) continue;
+
+    // Try matching phrase-based modifiers: e.g., "half as", "twice as"
+    const phraseMod = matchVerbalModifier(i, currentIndex, "before");
+    if (phraseMod) return phraseMod;
+
+    const result = matchNumberPattern(token);
+    if (result) {
+      return { ...result, position: i, direction: 'before' };
+    }
+  }
+
+  // Check next tokens
+  const nextEnd = Math.min(tokens.length, currentIndex + contextWindow + 1);
+  for (let i = currentIndex + 1; i < nextEnd; i++) {
+    const token = tokens[i];
+
+    const result = matchNumberPattern(token);
+    if (result) {
+      return { ...result, position: i, direction: 'after' };
+    }
+
+    // Check for forward phrases like "as good as", "three times as"
+    const phraseMod = matchVerbalModifier(currentIndex + 1, i + 1, "after");
+    if (phraseMod) return phraseMod;
+  }
+
+  return null;
+}
+
 // Improved analyze function with better modifiers handling
 function analyze(text) {
   if (!text.trim()) return {
@@ -251,14 +363,21 @@ function analyze(text) {
       continue;
     }
 
+    // Handle number modifiers before processing sentiment words
+    let numberModifier = null;
+    if (sentimentLexicon[token] !== undefined) {
+      numberModifier = detectNumberModifiers(text, i, tokens);
+    }
+
     // Handle negations with extended context
     if (negations.has(token)) {
       highlights[i] = { type: 'negation' };
-      explanations.push(`Found negation word: <strong>"${rawToken}"</strong> - will invert sentiment of following ${CONTEXT_WINDOW} words`);
+      explanations.push(`Found negation word: <strong>"${rawToken}"</strong> - will invert sentiment of following words within ${CONTEXT_WINDOW} tokens`);
       modifierStack.push({
         type: 'negation',
         value: -1,
-        duration: CONTEXT_WINDOW,
+        startPos: i, // Track starting position
+        endPos: i + CONTEXT_WINDOW, // Track absolute end position
         word: rawToken
       });
       continue;
@@ -269,13 +388,17 @@ function analyze(text) {
       modifierStack.push({
         type: 'intensifier',
         value: intensifiers[token],
-        duration: CONTEXT_WINDOW,
+        startPos: i, // Track starting position
+        endPos: i + CONTEXT_WINDOW, // Track absolute end position
         word: rawToken
       });
       highlights[i] = { type: 'intensifier' };
-      explanations.push(`Found intensifier: <strong>"${rawToken}"</strong> (will multiply next ${CONTEXT_WINDOW} sentiment scores by ${intensifiers[token].toFixed(2)})`);
+      explanations.push(`Found intensifier: <strong>"${rawToken}"</strong> (will multiply sentiment scores within next ${CONTEXT_WINDOW} tokens`);
       continue;
     }
+
+    // Clean up expired modifiers before processing current token
+    modifierStack = modifierStack.filter(m => i < m.endPos);
 
     if (sentimentLexicon[token] !== undefined) {
       let wordSentiment = sentimentLexicon[token];
@@ -284,18 +407,35 @@ function analyze(text) {
       let modifierEffect = 1;
       let modifierExplanation = '';
       
+      // Apply number modifier if found
+      if (numberModifier) {
+        const multiplier = numberModifier.value;
+        wordSentiment *= multiplier;
+        explanation += ` → modified by number <strong>"${numberModifier.token}"</strong> (x${multiplier.toFixed(2)}) to ${wordSentiment > 0 ? '+' : ''}${wordSentiment.toFixed(2)}`;
+        
+        // Highlight the number that modified this word
+        highlights[numberModifier.position] = { 
+          type: 'number-modifier',
+          value: multiplier,
+          direction: numberModifier.direction
+        };
+        
+        // If the number comes after, we should mark this token as being modified
+        if (numberModifier.direction === 'after') {
+          highlights[i] = highlights[i] || {};
+          highlights[i].modifiedBy = numberModifier.position;
+        }
+      }
+      
+      // Apply modifiers from the stack
       if (modifierStack.length > 0) {
         modifierStack.forEach(mod => {
           modifierEffect *= mod.value;
           modifierExplanation += ` → modified by <strong>${mod.word}</strong> (x${mod.value.toFixed(2)})`;
-          mod.duration--;
         });
         
         wordSentiment *= modifierEffect;
         explanation += modifierExplanation + ` to ${wordSentiment > 0 ? '+' : ''}${wordSentiment.toFixed(2)}`;
-
-        // Clean expired modifiers (duration reached 0)
-        modifierStack = modifierStack.filter(m => m.duration > 0);
       }
 
       // Determine highlight type based on final sentiment
@@ -311,10 +451,6 @@ function analyze(text) {
       else if (wordSentiment < 0) negativeCount++;
       
       explanations.push(explanation + ` → added to total score`);
-    } else {
-      // Reduce context for non-sentiment words
-      modifierStack.forEach(m => m.duration--);
-      modifierStack = modifierStack.filter(m => m.duration > 0);
     }
   }
 
@@ -463,6 +599,7 @@ function highlightText(originalText, highlights) {
   return finalOutput.join('');
 }
 
+// Update getHighlightTooltip to include number modifiers
 function getHighlightTooltip(type) {
   const tooltips = {
     'positive': 'Positive word - contributes to positive sentiment',
@@ -471,7 +608,8 @@ function getHighlightTooltip(type) {
     'intensifier': 'Intensifier - strengthens sentiment of following words',
     'sarcasm': 'Sarcasm indicator - may reduce sentiment confidence',
     'phrase': 'Idiomatic phrase - carries special sentiment meaning',
-    'chain': 'Chained expression - combination of modifiers and sentiment words'
+    'chain': 'Chained expression - combination of modifiers and sentiment words',
+    'number-modifier': 'Number modifier - scales the sentiment value'
   };
   return tooltips[type] || 'Highlighted element';
 }

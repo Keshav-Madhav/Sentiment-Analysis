@@ -19,6 +19,7 @@ const sentimentLexicon = {
   worthy: 1.2, dedicated: 1.0, committed: 0.9, attentive: 1.1,
   quality: 1.2, convenient: 1.0, reliable: 1.2, trustworthy: 1.3,
   honest: 1.2, genuine: 1.2, recommended: 1.3, recommend: 1.3,
+  wow: 2.0, fantastic: 2.5, fabulous: 2.4, splendid: 2.3,
 
   // Feeling related
   bored: -1.0, boring: -1.2, dull: -1.0, tedious: -1.2, tiresome: -1.3,
@@ -485,7 +486,6 @@ const idiomaticPhrases = {
   "sky high prices": -3.5,
   "rock bottom prices": 3.5,
   "dirt cheap": 3.2,
-  "cheap": 3,
   "cheaply made": -3,
   "poorly made": -3.2,
   "well made": 3.2,

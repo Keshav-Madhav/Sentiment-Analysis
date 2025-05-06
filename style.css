@@ -17,6 +17,8 @@
   --sarcasm-light: #ffedd5;
   --phrase: #8b5cf6;
   --phrase-light: #ede9fe;
+  --number-modifier: #3b82f6;
+  --number-modifier-light: #bfdbfe;
   --shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
   --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
   --radius: 12px;
@@ -252,6 +254,12 @@ button svg {
   color: var(--phrase);
   border-bottom: 2px solid var(--phrase);
   font-weight: 600;
+}
+
+.number-modifier {
+  background-color: var(--number-modifier-light);
+  color: var(--number-modifier);
+  border-bottom: 2px solid var(--number-modifier);
 }
 
 .legend {
